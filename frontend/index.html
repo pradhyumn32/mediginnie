@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Medijinn - Clinical Drug Side-Effect & Safety Intelligence</title>
+  <meta name="description" content="Production-grade, grounded pharmaceutical AI assistant for drug side effects, adverse reactions, and safety triage based on FDA and DailyMed labels.">
+  
+  <!-- Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Markdown Parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Top App Navigation -->
+  <header class="app-header">
+    <a href="/" class="brand" id="brand-logo">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M19 10.5V7a2 2 0 0 0-2-2h-3V3a1 1 0 0 0-2 0v2H9a2 2 0 0 0-2 2v3.5a5.5 5.5 0 0 0 0 11H8a1 1 0 0 0 0-2h-.5a3.5 3.5 0 0 1 0-7H9v3a1 1 0 0 0 2 0v-3h2v3a1 1 0 0 0 2 0v-3h1.5a3.5 3.5 0 0 1 0 7H16a1 1 0 0 0 0 2h1a5.5 5.5 0 0 0 2-10.5z"/>
+        </svg>
+      </div>
+      <div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="brand-name">Medijinn</span>
+          <span class="brand-tag">Clinical RAG</span>
+        </div>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <div class="health-status-badge" id="health-badge">
+        <div class="status-dot"></div>
+        <span id="health-text">Connecting to Knowledge Plane...</span>
+      </div>
+
+      <button class="btn-catalog" id="btn-open-catalog" aria-label="Open Drug Knowledge Base">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+        <span>Drug Catalog</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Chatbot Container -->
+  <main class="app-container">
+    
+    <!-- Static Legal & Clinical Disclaimer -->
+    <div class="disclaimer-banner" id="disclaimer-banner">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z"/>
+      </svg>
+      <div>
+        <strong>Official Medical Disclaimer:</strong> Medijinn retrieves approved FDA and DailyMed drug labeling. It provides educational guidance only and does NOT replace licensed clinician diagnoses or prescription management.
+      </div>
+    </div>
+
+    <!-- Dynamic Emergency Triage Banner -->
+    <div class="emergency-banner" id="emergency-banner">
+      <div class="emergency-header">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span id="emergency-title">ACUTE CLINICAL EMERGENCY DETECTED</span>
+      </div>
+      <div class="emergency-body" id="emergency-body">
+        Please seek emergency medical attention immediately. Call 911 or your local emergency number.
+      </div>
+    </div>
+
+    <!-- Scrollable Messages Window -->
+    <div class="chat-window" id="chat-window">
+      
+      <!-- Welcome Hero (Hidden after first message) -->
+      <div class="welcome-hero" id="welcome-hero">
+        <div class="hero-pill">
+          <span>●</span> Grounded by FDA & DailyMed Clinical Labeling
+        </div>
+        <h1 class="hero-title">Predict & Understand Drug Side Effects</h1>
+        <p class="hero-subtitle">
+          Ask questions about potential adverse reactions, black box warnings, and drug-drug interactions verified against clinical package inserts.
+        </p>
+
+        <div class="suggested-prompts">
+          <div class="prompt-card glass" data-prompt="What are the common side effects of Metformin like nausea or diarrhea?">
+            <span class="prompt-label">Adverse Reactions</span>
+            <span class="prompt-text">"What are the common side effects of Metformin like nausea or diarrhea?"</span>
+          </div>
+          <div class="prompt-card glass" data-prompt="Can I take Lisinopril and Ibuprofen together?">
+            <span class="prompt-label">Drug Interaction</span>
+            <span class="prompt-text">"Can I take Lisinopril and Ibuprofen together?"</span>
+          </div>
+          <div class="prompt-card glass" data-prompt="What are the boxed warnings and risks of lactic acidosis for Glucophage?">
+            <span class="prompt-label">Boxed Warning</span>
+            <span class="prompt-text">"What are the boxed warnings for Glucophage regarding lactic acidosis?"</span>
+          </div>
+          <div class="prompt-card glass" data-prompt="Does Lisinopril cause a chronic dry cough or angioedema?">
+            <span class="prompt-label">Symptom Inquiry</span>
+            <span class="prompt-text">"Does Lisinopril cause a chronic dry cough or angioedema?"</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Bottom Input Bar -->
+    <div class="chat-input-bar">
+      <div class="input-container glass">
+        <textarea 
+          id="user-input" 
+          rows="1" 
+          placeholder="Ask about a medication, brand name, or side effect (e.g. Glucophage, Lisinopril cough)..."
+          aria-label="Ask Medijinn about a drug or symptom"
+        ></textarea>
+        <button class="send-btn" id="send-btn" aria-label="Send Message">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal: Drug Knowledge Catalog & Ingestion -->
+  <div class="modal-overlay" id="catalog-modal">
+    <div class="modal-dialog glass">
+      <div class="modal-header">
+        <h2>Drug Knowledge Base & Ingestion</h2>
+        <button class="modal-close-btn" id="btn-close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- On-Demand Ingestion Form -->
+        <div class="ingest-box">
+          <h3>Ingest New Drug Label</h3>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+            Fetches official FDA/DailyMed labeling, resolves brand names via RxNorm, and embeds into pgvector.
+          </p>
+          <div class="ingest-form">
+            <input type="text" id="ingest-drug-name" class="input-field" placeholder="Drug name (e.g. Amoxicillin, Atorvastatin, Lipitor)">
+            <select id="ingest-source" class="select-field">
+              <option value="auto">Auto (RxNorm + FDA + DailyMed)</option>
+              <option value="openfda">OpenFDA API</option>
+              <option value="dailymed">DailyMed SPL XML</option>
+            </select>
+            <button class="btn-primary" id="btn-submit-ingest">Ingest Label</button>
+          </div>
+          <div id="ingest-feedback" style="margin-top: 0.5rem; font-size: 0.8rem; display: none;"></div>
+        </div>
+
+        <!-- Currently Indexed Drugs Table -->
+        <div>
+          <h3 style="font-size: 1rem; color: #fff; margin-bottom: 0.75rem;">Currently Indexed Medications</h3>
+          <table class="drug-table">
+            <thead>
+              <tr>
+                <th>Generic Name</th>
+                <th>Known Brand Names</th>
+                <th>Vector Chunks</th>
+              </tr>
+            </thead>
+            <tbody id="drug-table-body">
+              <tr>
+                <td colspan="3" style="text-align: center; color: var(--text-muted);">Loading catalog...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

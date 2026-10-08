@@ -1,0 +1,16 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.4.0
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+pgvector>=0.3.0
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-text-splitters>=0.2.0
+langchain-huggingface>=0.0.3
+langgraph>=0.2.0
+sentence-transformers>=3.0.0
+torch>=2.2.0
+requests>=2.31.0
+python-dotenv>=1.0.0
