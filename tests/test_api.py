@@ -79,6 +79,36 @@ def test_chat_streaming():
         print(f"\n[Streaming Test] Received {len(events)} SSE stream frames.")
 
 
+def test_chat_missing_drug_refusal():
+    payload = {
+        "message": "What are the side effects of XyzFakeMedication?"
+    }
+    response = client.post("/api/chat", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_emergency"] is False
+    assert len(data["sources"]) == 0
+    # Must refuse cleanly without citing or mentioning other random drugs
+    assert "not have official" in data["response"].lower() or "not present" in data["response"].lower()
+    # Ensure no cross-pollution of unrelated indexed drugs
+    assert "arbutin" not in data["response"].lower()
+    assert "deodorant" not in data["response"].lower()
+    print(f"\n[Missing Drug Test] Clean refusal verified with 0 irrelevant sources.")
+
+
+def test_chat_auto_ingestion():
+    payload = {
+        "message": "What are the side effects of Ozempic?"
+    }
+    response = client.post("/api/chat", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_emergency"] is False
+    assert len(data["sources"]) > 0
+    assert "SEMAGLUTIDE" in str(data["sources"][0]) or "SEMAGLUTIDE" in data["canonical_drugs"]
+    print(f"\n[Auto-Ingestion Test] Successfully ingested & retrieved {len(data['sources'])} sources.")
+
+
 if __name__ == "__main__":
     print("Running Medijinn API Test Suite...")
     test_root()
@@ -86,5 +116,7 @@ if __name__ == "__main__":
     test_list_indexed_drugs()
     test_chat_emergency()
     test_chat_side_effects()
+    test_chat_missing_drug_refusal()
+    test_chat_auto_ingestion()
     test_chat_streaming()
     print("\n✅ All API Integration Tests Passed Successfully!")

@@ -71,6 +71,15 @@ class ClinicalFallbackChatModel(BaseChatModel):
             else:
                 content = re.sub(r"^[^\]]*\]\s*", "", ch_clean).strip()
                 general_notes.append(content)
+        # If context is empty or no valid chunks were found, strictly refuse
+        if not context_str.strip() or not (boxed_warnings or adverse_reactions or interactions or contraindications or general_notes):
+            response_text = (
+                f"I do not have official FDA or DailyMed labeling information for **{drug_name}** in the database. "
+                "I cannot provide medical information, side effects, or clinical guidance for medications not present "
+                "in the official verified records. Please consult a qualified clinician or pharmacist."
+            )
+            generation = ChatGeneration(message=AIMessage(content=response_text))
+            return ChatResult(generations=[generation])
 
         response_text = f"### Official Clinical Assessment for {drug_name}\n\n"
         response_text += "Synthesized directly from official FDA & DailyMed Structured Product Labeling (SPL):\n\n"

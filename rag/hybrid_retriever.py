@@ -7,10 +7,11 @@ Combines:
 4. LangChain BaseRetriever compliance
 """
 
+import re
 from typing import Any, Optional
 import uuid
 from pydantic import Field
-from sqlalchemy import func, select, or_
+from sqlalchemy import func, select, or_, Text
 from sqlalchemy.orm import Session
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
@@ -56,6 +57,13 @@ class HybridRetriever(BaseRetriever):
 
         if drug_id:
             stmt = stmt.where(MedicalChunk.drug_id == drug_id)
+            # Enforce reasonable distance within drug chunks
+            stmt = stmt.where(cosine_dist <= 0.45)
+        else:
+            # If no drug filter is provided, enforce strict semantic similarity
+            # to prevent returning unrelated drug chunks
+            stmt = stmt.where(cosine_dist <= 0.35)
+
         if section:
             stmt = stmt.where(MedicalChunk.section == section)
 
@@ -90,7 +98,7 @@ class HybridRetriever(BaseRetriever):
         conditions = []
         if ilike_filters:
             conditions.append(or_(*ilike_filters))
-        conditions.append(trgm_sim > 0.05)
+        conditions.append(trgm_sim > 0.08)
 
         stmt = stmt.where(or_(*conditions))
 
@@ -106,18 +114,49 @@ class HybridRetriever(BaseRetriever):
 
     def _find_drug_id(self, db: Session, drug_name: str) -> Optional[uuid.UUID]:
         """
-        Lookup drug UUID by generic name or brand names.
+        Lookup drug UUID by generic name or brand names using word-boundary matching.
+        Prioritizes records that actually have chunks indexed in the database.
         """
         clean_name = drug_name.strip().upper()
-        # Direct generic match
-        drug = db.query(Drug).filter(func.upper(Drug.generic_name) == clean_name).first()
-        if drug:
-            return drug.id
+        if len(clean_name) < 3:
+            return None
 
-        # Substring / brand name match
-        drug = db.query(Drug).filter(Drug.generic_name.ilike(f"%{clean_name}%")).first()
-        if drug:
-            return drug.id
+        # Try matching records that have chunks first, then fallback to any matching drug record
+        for require_chunks in (True, False):
+            base_q = db.query(Drug)
+            if require_chunks:
+                base_q = base_q.join(MedicalChunk, MedicalChunk.drug_id == Drug.id)
+
+            # 1. Direct generic match
+            drug = base_q.filter(func.upper(Drug.generic_name) == clean_name).first()
+            if drug:
+                return drug.id
+
+            # 2. Word boundary match on brand names in JSONB
+            try:
+                drug = base_q.filter(
+                    Drug.brand_names.cast(Text).op("~*")(rf"\y{re.escape(clean_name)}\y")
+                ).first()
+                if drug:
+                    return drug.id
+            except Exception:
+                pass
+
+            # 3. Word boundary match on generic name
+            try:
+                drug = base_q.filter(
+                    Drug.generic_name.op("~*")(rf"\y{re.escape(clean_name)}\y")
+                ).first()
+                if drug:
+                    return drug.id
+            except Exception:
+                pass
+
+            # 4. Containment fallback for multi-word or salt variations (e.g. METFORMIN -> METFORMIN HYDROCHLORIDE)
+            if len(clean_name) >= 4:
+                drug = base_q.filter(Drug.generic_name.ilike(f"%{clean_name}%")).first()
+                if drug:
+                    return drug.id
 
         return None
 
@@ -131,6 +170,7 @@ class HybridRetriever(BaseRetriever):
         """
         Executes hybrid search and merges results using Reciprocal Rank Fusion.
         Returns rich dictionary format with metadata and provenance.
+        If a target drug is specified but not found in the DB, returns [] immediately.
         """
         k = top_k or self.top_k
         target_drug_name = drug_name or self.filter_drug_name
@@ -145,6 +185,10 @@ class HybridRetriever(BaseRetriever):
             drug_id: Optional[uuid.UUID] = None
             if target_drug_name:
                 drug_id = self._find_drug_id(db, target_drug_name)
+                if not drug_id:
+                    # Drug was specified but does not exist in the database.
+                    # Strictly refuse to search across unrelated drugs.
+                    return []
 
             # 1. Fetch dense candidates
             dense_results = self._dense_search(
