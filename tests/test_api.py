@@ -109,6 +109,66 @@ def test_chat_auto_ingestion():
     print(f"\n[Auto-Ingestion Test] Successfully ingested & retrieved {len(data['sources'])} sources.")
 
 
+def test_chat_drug_uses():
+    payload = {
+        "message": "What are the uses of Pantoprazole?"
+    }
+    response = client.post("/api/chat", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_emergency"] is False
+    assert data["intent"] == "indications"
+    assert len(data["sources"]) > 0
+    assert any("indication" in s["section"].lower() or "prescribed" in s["section"].lower() for s in data["sources"])
+    print(f"\n[Drug Uses Test] Successfully retrieved {len(data['sources'])} indication chunks.")
+
+
+def test_chat_history_memory():
+    # Turn 1: Initial query establishing drug context
+    turn1_payload = {
+        "message": "What are the uses of Pantoprazole?"
+    }
+    r1 = client.post("/api/chat", json=turn1_payload)
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert "PANTOPRAZOLE" in str(d1["canonical_drugs"])
+
+    # Turn 2: Follow-up question using pronoun 'its' without repeating drug name
+    turn2_payload = {
+        "message": "What are its common side effects?",
+        "chat_history": [
+            {"role": "user", "content": "What are the uses of Pantoprazole?"},
+            {"role": "assistant", "content": d1["response"]},
+        ],
+    }
+    r2 = client.post("/api/chat", json=turn2_payload)
+    assert r2.status_code == 200
+    d2 = r2.json()
+    # Must remember Pantoprazole from previous turn
+    assert any("PANTOPRAZOLE" in d for d in d2["canonical_drugs"])
+    assert d2["intent"] == "side_effects"
+    assert len(d2["sources"]) > 0
+    print(f"\n[Chat History Memory Test] Follow-up pronoun 'its' successfully resolved to {d2['canonical_drugs']}.")
+
+    # Turn 3: Cross-turn interaction query ('Can I take it with Ibuprofen?')
+    turn3_payload = {
+        "message": "Can I take it with Ibuprofen?",
+        "chat_history": [
+            {"role": "user", "content": "What are the uses of Pantoprazole?"},
+            {"role": "assistant", "content": d1["response"]},
+            {"role": "user", "content": "What are its common side effects?"},
+            {"role": "assistant", "content": d2["response"]},
+        ],
+    }
+    r3 = client.post("/api/chat", json=turn3_payload)
+    assert r3.status_code == 200
+    d3 = r3.json()
+    assert d3["intent"] == "interaction"
+    assert any("PANTOPRAZOLE" in d for d in d3["canonical_drugs"])
+    assert any("IBUPROFEN" in d for d in d3["canonical_drugs"])
+    print(f"\n[Cross-Turn Interaction Test] Successfully combined chat history drug with new drug: {d3['canonical_drugs']}.")
+
+
 if __name__ == "__main__":
     print("Running Medijinn API Test Suite...")
     test_root()
@@ -116,6 +176,8 @@ if __name__ == "__main__":
     test_list_indexed_drugs()
     test_chat_emergency()
     test_chat_side_effects()
+    test_chat_drug_uses()
+    test_chat_history_memory()
     test_chat_missing_drug_refusal()
     test_chat_auto_ingestion()
     test_chat_streaming()

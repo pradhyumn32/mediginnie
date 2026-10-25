@@ -40,6 +40,13 @@
         <span id="health-text">Connecting to Knowledge Plane...</span>
       </div>
 
+      <button class="btn-catalog" id="btn-new-chat" aria-label="Start New Chat" title="Start New Conversation">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <span>New Chat</span>
+      </button>
+
       <button class="btn-catalog" id="btn-open-catalog" aria-label="Open Drug Knowledge Base">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
@@ -86,12 +93,16 @@
         <div class="hero-pill">
           <span>●</span> Grounded by FDA & DailyMed Clinical Labeling
         </div>
-        <h1 class="hero-title">Predict & Understand Drug Side Effects</h1>
+        <h1 class="hero-title">Predict & Understand Drug Uses & Side Effects</h1>
         <p class="hero-subtitle">
-          Ask questions about potential adverse reactions, black box warnings, and drug-drug interactions verified against clinical package inserts.
+          Ask questions about approved medical uses, indications, adverse reactions, boxed warnings, and drug interactions verified against clinical FDA and DailyMed package inserts.
         </p>
 
         <div class="suggested-prompts">
+          <div class="prompt-card glass" data-prompt="What are the approved medical uses and indications of Pantoprazole?">
+            <span class="prompt-label">Approved Uses</span>
+            <span class="prompt-text">"What are the approved medical uses and indications of Pantoprazole?"</span>
+          </div>
           <div class="prompt-card glass" data-prompt="What are the common side effects of Metformin like nausea or diarrhea?">
             <span class="prompt-label">Adverse Reactions</span>
             <span class="prompt-text">"What are the common side effects of Metformin like nausea or diarrhea?"</span>
@@ -104,10 +115,6 @@
             <span class="prompt-label">Boxed Warning</span>
             <span class="prompt-text">"What are the boxed warnings for Glucophage regarding lactic acidosis?"</span>
           </div>
-          <div class="prompt-card glass" data-prompt="Does Lisinopril cause a chronic dry cough or angioedema?">
-            <span class="prompt-label">Symptom Inquiry</span>
-            <span class="prompt-text">"Does Lisinopril cause a chronic dry cough or angioedema?"</span>
-          </div>
         </div>
       </div>
 
@@ -119,8 +126,8 @@
         <textarea 
           id="user-input" 
           rows="1" 
-          placeholder="Ask about a medication, brand name, or side effect (e.g. Glucophage, Lisinopril cough)..."
-          aria-label="Ask Medijinn about a drug or symptom"
+          placeholder="Ask about medication uses, brand names, or side effects (e.g. Pantoprazole uses, Glucophage)..."
+          aria-label="Ask Medijinn about a drug, indication, or symptom"
         ></textarea>
         <button class="send-btn" id="send-btn" aria-label="Send Message">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

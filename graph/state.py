@@ -22,7 +22,7 @@ class AgentState(TypedDict):
     extracted_drugs: list[str]
     canonical_drugs: list[str]
     extracted_symptoms: list[str]
-    intent: Literal["side_effects", "interaction", "contraindication", "dosage", "general", "emergency"]
+    intent: Literal["side_effects", "indications", "interaction", "contraindication", "dosage", "warnings", "general", "conversational", "greeting", "emergency"]
 
     # Retrieval & Provenance
     retrieved_chunks: list[dict[str, Any]]

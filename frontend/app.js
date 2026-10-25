@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const catalogModal = document.getElementById("catalog-modal");
   const btnOpenCatalog = document.getElementById("btn-open-catalog");
   const btnCloseModal = document.getElementById("btn-close-modal");
+  const btnNewChat = document.getElementById("btn-new-chat");
   const drugTableBody = document.getElementById("drug-table-body");
   const btnSubmitIngest = document.getElementById("btn-submit-ingest");
   const ingestDrugName = document.getElementById("ingest-drug-name");
@@ -24,6 +25,60 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let isGenerating = false;
   let chatHistory = [];
+  const STORAGE_KEY = "medijinn_chat_history";
+
+  function saveChatHistory() {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(chatHistory));
+    } catch (e) {
+      console.warn("Could not save chat history to sessionStorage:", e);
+    }
+  }
+
+  function loadChatHistory() {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          chatHistory = parsed;
+          if (welcomeHero) welcomeHero.style.display = "none";
+          parsed.forEach((m) => {
+            if (m.role === "user") {
+              appendMessageRow("user", m.content);
+            } else if (m.role === "assistant") {
+              const row = appendAssistantPlaceholder();
+              const bubbleEl = row.querySelector(".message-bubble");
+              const contentEl = bubbleEl.querySelector(".bubble-content");
+              contentEl.innerHTML = marked.parse(m.content);
+            }
+          });
+          chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load chat history from sessionStorage:", e);
+    }
+  }
+
+  if (btnNewChat) {
+    btnNewChat.addEventListener("click", () => {
+      chatHistory = [];
+      try {
+        sessionStorage.removeItem(STORAGE_KEY);
+      } catch {}
+      // Clear rendered messages
+      const rows = chatWindow.querySelectorAll(".message-row");
+      rows.forEach((r) => r.remove());
+      if (welcomeHero) welcomeHero.style.display = "flex";
+      emergencyBanner.classList.remove("active");
+      userInput.value = "";
+      userInput.style.height = "auto";
+    });
+  }
+
+  // Restore existing conversation if present
+  loadChatHistory();
 
   // 1. Initial Health Check & Statistics
   async function refreshHealth() {
@@ -88,9 +143,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     emergencyBanner.classList.remove("active");
 
+    // History to send to the backend includes all prior conversation turns (up to 20 messages)
+    const priorHistory = chatHistory.slice(-20);
+
     // Append User Message
     appendMessageRow("user", text);
     chatHistory.push({ role: "user", content: text });
+    saveChatHistory();
 
     // Append Assistant Placeholder Bubble
     const assistantRow = appendAssistantPlaceholder();
@@ -105,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          chat_history: chatHistory.slice(-4),
+          chat_history: priorHistory,
         }),
       });
 
@@ -168,6 +227,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (fullMessage) {
         chatHistory.push({ role: "assistant", content: fullMessage });
+        saveChatHistory();
       }
 
     } catch (err) {
@@ -179,7 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: text,
-            chat_history: chatHistory.slice(-4),
+            chat_history: priorHistory,
           }),
         });
         const data = await fallbackRes.json();
@@ -199,6 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         contentEl.innerHTML = marked.parse(data.response || "No response received.");
         chatHistory.push({ role: "assistant", content: data.response });
+        saveChatHistory();
 
       } catch (fallbackErr) {
         contentEl.innerHTML = `<p style="color: #f87171;">⚠️ Error connecting to Medijinn backend: ${fallbackErr.message}</p>`;

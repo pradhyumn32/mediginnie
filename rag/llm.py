@@ -45,6 +45,7 @@ class ClinicalFallbackChatModel(BaseChatModel):
         raw_chunks = re.split(r"\[Chunk\s+\d+\s*\|", context_str)
         
         boxed_warnings = []
+        indications = []
         adverse_reactions = []
         interactions = []
         contraindications = []
@@ -59,6 +60,9 @@ class ClinicalFallbackChatModel(BaseChatModel):
             if "Boxed Warning" in ch_clean or "Severity: CRITICAL" in ch_clean:
                 content = re.sub(r"^[^\]]*\]\s*", "", ch_clean).strip()
                 boxed_warnings.append(content)
+            elif "Indications" in ch_clean or "indications_and_usage" in ch_clean.lower() or "Category: indication" in ch_clean:
+                content = re.sub(r"^[^\]]*\]\s*", "", ch_clean).strip()
+                indications.append(content)
             elif "Adverse Reactions" in ch_clean or "Severity: SIDE_EFFECT" in ch_clean:
                 content = re.sub(r"^[^\]]*\]\s*", "", ch_clean).strip()
                 adverse_reactions.append(content)
@@ -71,8 +75,18 @@ class ClinicalFallbackChatModel(BaseChatModel):
             else:
                 content = re.sub(r"^[^\]]*\]\s*", "", ch_clean).strip()
                 general_notes.append(content)
-        # If context is empty or no valid chunks were found, strictly refuse
-        if not context_str.strip() or not (boxed_warnings or adverse_reactions or interactions or contraindications or general_notes):
+        # If context is empty or no valid chunks were found, check chat history or refuse
+        if not context_str.strip() or not (boxed_warnings or indications or adverse_reactions or interactions or contraindications or general_notes):
+            prior_ai_messages = [m.content for m in messages if getattr(m, "type", "") in ("ai", "assistant")]
+            if prior_ai_messages:
+                last_ai = prior_ai_messages[-1]
+                response_text = (
+                    f"Based on our earlier discussion:\n\n{last_ai[:600]}...\n\n"
+                    "Let me know if you would like more details about its uses, side effects, warnings, or interactions!"
+                )
+                generation = ChatGeneration(message=AIMessage(content=response_text))
+                return ChatResult(generations=[generation])
+
             response_text = (
                 f"I do not have official FDA or DailyMed labeling information for **{drug_name}** in the database. "
                 "I cannot provide medical information, side effects, or clinical guidance for medications not present "
@@ -83,6 +97,14 @@ class ClinicalFallbackChatModel(BaseChatModel):
 
         response_text = f"### Official Clinical Assessment for {drug_name}\n\n"
         response_text += "Synthesized directly from official FDA & DailyMed Structured Product Labeling (SPL):\n\n"
+
+        if indications:
+            response_text += "#### 🎯 Approved Indications & Medical Uses\n"
+            for ind in indications[:2]:
+                first_lines = [l.strip() for l in ind.split("\n") if l.strip() and not l.startswith("Drug:")]
+                summary = " ".join(first_lines[:3])
+                response_text += f"- {summary[:380]}... `[Source: FDA/DailyMed: Indications & Usage]`\n"
+            response_text += "\n"
 
         if boxed_warnings:
             response_text += "#### 🚨 Boxed Warning (Highest Clinical Alert)\n"
@@ -116,7 +138,7 @@ class ClinicalFallbackChatModel(BaseChatModel):
                 response_text += f"- {summary[:320]}... `[Source: FDA/DailyMed: Drug Interactions]`\n"
             response_text += "\n"
 
-        if not (boxed_warnings or adverse_reactions or interactions or contraindications) and general_notes:
+        if not (indications or boxed_warnings or adverse_reactions or interactions or contraindications) and general_notes:
             response_text += "#### Clinical Findings\n"
             for gn in general_notes[:2]:
                 first_lines = [l.strip() for l in gn.split("\n") if l.strip() and not l.startswith("Drug:")]

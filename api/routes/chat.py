@@ -24,6 +24,9 @@ def build_initial_state(request: ChatRequest) -> AgentState:
     messages = []
     if request.chat_history:
         for m in request.chat_history:
+            # Skip if the user message was already pushed by the client as the last history item
+            if m.role == "user" and m.content.strip() == request.message.strip():
+                continue
             if m.role == "user":
                 messages.append(HumanMessage(content=m.content))
             elif m.role == "assistant":
