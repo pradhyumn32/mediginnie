@@ -50,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
               const row = appendAssistantPlaceholder();
               const bubbleEl = row.querySelector(".message-bubble");
               const contentEl = bubbleEl.querySelector(".bubble-content");
-              contentEl.innerHTML = marked.parse(m.content);
+              contentEl.innerHTML = renderMarkdown(m.content);
             }
           });
           chatWindow.scrollTop = chatWindow.scrollHeight;
@@ -219,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderSourcesAccordion(sourcesEl, parsedData.sources);
           } else if (eventName === "message") {
             fullMessage = parsedData.response || "";
-            contentEl.innerHTML = marked.parse(fullMessage);
+            contentEl.innerHTML = renderMarkdown(fullMessage);
             chatWindow.scrollTop = chatWindow.scrollHeight;
           }
         }
@@ -257,7 +257,7 @@ document.addEventListener("DOMContentLoaded", () => {
           renderSourcesAccordion(sourcesEl, data.sources);
         }
 
-        contentEl.innerHTML = marked.parse(data.response || "No response received.");
+        contentEl.innerHTML = renderMarkdown(data.response || "No response received.");
         chatHistory.push({ role: "assistant", content: data.response });
         saveChatHistory();
 
@@ -272,6 +272,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 5. DOM Helpers
+  function renderMarkdown(md) {
+    const rawHtml = marked.parse(md || "");
+    return typeof DOMPurify !== "undefined" ? DOMPurify.sanitize(rawHtml) : rawHtml;
+  }
+
   function appendMessageRow(role, text) {
     const row = document.createElement("div");
     row.className = `message-row ${role}`;
@@ -358,12 +363,24 @@ document.addEventListener("DOMContentLoaded", () => {
       const drug = s.drug || s.generic_name || "Drug";
       const src = (s.source || "FDA").toUpperCase();
 
+      const passageHtml = s.matched_passage
+        ? `<div class="source-passage" style="margin-top: 0.4rem; font-size: 0.75rem; color: #94a3b8; font-style: italic; max-height: 4.5em; overflow: hidden; text-overflow: ellipsis;">"${escapeHtml(s.matched_passage.slice(0, 280))}${s.matched_passage.length > 280 ? '...' : ''}"</div>`
+        : '';
+
       card.innerHTML = `
-        <div>
-          <div class="source-title">${escapeHtml(drug)} &mdash; ${escapeHtml(sec)}</div>
-          <span class="source-tag">Source: ${src}</span>
+        <div style="flex: 1;">
+          <div class="source-title">
+            ${escapeHtml(drug)} &mdash; ${escapeHtml(sec)}
+            ${s.source_url ? `<a href="${escapeHtml(s.source_url)}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline; font-weight: normal; font-size: 0.75rem; margin-left: 0.4rem;">Official Label ↗</a>` : ''}
+          </div>
+          <div style="margin-top: 2px;">
+            <span class="source-tag">Source: ${src}</span>
+            ${s.formulation ? `<span class="source-tag" style="margin-left: 0.35rem;">${escapeHtml(s.formulation)}</span>` : ''}
+            ${s.revision_date ? `<span class="source-tag" style="margin-left: 0.35rem;">Rev: ${escapeHtml(s.revision_date)}</span>` : ''}
+          </div>
+          ${passageHtml}
         </div>
-        <div class="source-badges">
+        <div class="source-badges" style="align-self: flex-start; margin-left: 0.5rem;">
           <span class="badge ${sev}">${sev.replace("_", " ")}</span>
         </div>
       `;
@@ -374,7 +391,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function triggerEmergencyAlert(msg) {
     emergencyBanner.classList.add("active");
     if (msg) {
-      emergencyBody.innerHTML = marked.parse(msg);
+      emergencyBody.innerHTML = renderMarkdown(msg);
     }
     chatWindow.scrollTop = 0;
   }

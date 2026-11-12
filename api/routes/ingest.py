@@ -1,17 +1,32 @@
 # Ingestion Management Endpoints for Medijinn
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Security, status
+from fastapi.security import APIKeyHeader
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from config.settings import settings
 from db.db import get_db
 from api.schemas import IngestRequest, IngestResponse, DrugSummary
 from preprocess.pipeline import ingest_drug
 
 router = APIRouter(prefix="/ingest", tags=["Data Ingestion"])
 
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-@router.post("", response_model=IngestResponse)
+
+def verify_admin_access(api_key: str | None = Security(api_key_header)):
+    """Verifies X-API-Key header against settings.ADMIN_API_KEY when configured."""
+    required_key = settings.ADMIN_API_KEY
+    if required_key and api_key != required_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Valid X-API-Key header required for data ingestion.",
+        )
+    return api_key
+
+
+@router.post("", response_model=IngestResponse, dependencies=[Depends(verify_admin_access)])
 def trigger_ingestion(request: IngestRequest):
     """
     Ingests official drug label data from OpenFDA, DailyMed, or auto-selected source,

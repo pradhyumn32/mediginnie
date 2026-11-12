@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 
 def route_after_triage(state: AgentState) -> str:
     """
-    Decides whether to route to immediate emergency directive or proceed to clinical RAG.
+    Decides whether to route to immediate emergency directive, refusal, or proceed to clinical RAG.
     """
-    if state.get("is_emergency"):
+    if state.get("is_emergency") or state.get("triage_level") == "BLOCKED":
         return "emergency"
     return "extract_entities"
 

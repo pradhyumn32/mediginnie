@@ -64,23 +64,40 @@ KNOWN_DRUG_CANDIDATES = [
 # -------------------------------------------------------------
 def triage_node(state: AgentState) -> dict[str, Any]:
     """
-    Evaluates incoming query for acute medical emergencies.
-    Bypasses retrieval if life-threatening conditions are detected.
+    Evaluates incoming query for acute medical emergencies and prescriptive boundaries.
+    Bypasses retrieval if life-threatening conditions or prescription requests are detected.
     """
     query = state.get("user_query", "").strip()
     if not query and state.get("messages"):
         query = state["messages"][-1].content
 
-    triage_result = MedicalGuardrails.evaluate_emergency(query)
+    chat_model = None
+    try:
+        from rag.llm import get_chat_model
+        chat_model = get_chat_model()
+    except Exception:
+        pass
 
-    if triage_result["is_emergency"]:
-        logger.warning("🚨 Acute emergency detected: %s", triage_result["emergency_type"])
+    safety_result = MedicalGuardrails.classify_safety(query, chat_model=chat_model)
+
+    if safety_result.get("is_emergency"):
+        logger.warning("🚨 Acute emergency detected: %s", safety_result["emergency_type"])
         return {
             "user_query": query,
             "is_emergency": True,
             "triage_level": "EMERGENCY",
-            "emergency_message": triage_result["emergency_message"],
+            "emergency_message": safety_result["emergency_message"],
             "intent": "emergency",
+        }
+
+    if safety_result.get("is_blocked"):
+        logger.info("⛔ Prescriptive request blocked: %s", safety_result["emergency_type"])
+        return {
+            "user_query": query,
+            "is_emergency": False,
+            "triage_level": "BLOCKED",
+            "emergency_message": safety_result["emergency_message"],
+            "intent": "prescriptive_refusal",
         }
 
     return {
@@ -371,6 +388,61 @@ def extract_entities_node(state: AgentState) -> dict[str, Any]:
     }
 
 
+def lookup_pairwise_interactions(drugs: list[str]) -> list[dict[str, Any]]:
+    """
+    Queries local PostgreSQL drug_interactions catalog for clinically validated pairwise interactions.
+    """
+    if len(drugs) < 2:
+        return []
+    from db.db import SessionLocal
+    from db.models import DrugInteraction
+    from sqlalchemy import or_, and_, func, select
+
+    norm_drugs = list(dict.fromkeys([d.strip().lower() for d in drugs if d.strip()]))
+    if len(norm_drugs) < 2:
+        return []
+
+    results = []
+    db = SessionLocal()
+    try:
+        for i in range(len(norm_drugs)):
+            for j in range(i + 1, len(norm_drugs)):
+                d1, d2 = norm_drugs[i], norm_drugs[j]
+                stmt = select(DrugInteraction).where(
+                    or_(
+                        and_(func.lower(DrugInteraction.drug_a) == d1, func.lower(DrugInteraction.drug_b) == d2),
+                        and_(func.lower(DrugInteraction.drug_a) == d2, func.lower(DrugInteraction.drug_b) == d1),
+                    )
+                )
+                rows = db.execute(stmt).scalars().all()
+                for row in rows:
+                    results.append({
+                        "id": str(row.id),
+                        "drug_id": "",
+                        "generic_name": f"{row.drug_a.upper()} + {row.drug_b.upper()}",
+                        "brand_names": [],
+                        "section": "drug_interactions",
+                        "section_title": f"VERIFIED PAIRWISE INTERACTION: {row.drug_a.upper()} & {row.drug_b.upper()}",
+                        "severity": row.severity,
+                        "category": "pairwise_interaction",
+                        "content": (
+                            f"🚨 **CLINICALLY VALIDATED INTERACTION [{row.severity}]**: {row.description}\n\n"
+                            f"**Clinical Management**: {row.clinical_management or 'Consult prescribing physician before co-administration.'}"
+                        ),
+                        "source": row.source or "clinical_pairwise_catalog",
+                        "source_url": None,
+                        "revision_date": row.created_at.strftime("%Y-%m-%d") if row.created_at else None,
+                        "formulation": "Systemic Co-administration",
+                        "rrf_score": 1.0,
+                    })
+    except Exception as e:
+        logger.warning("Error checking pairwise interactions table: %s", e)
+    finally:
+        db.close()
+
+    return results
+
+
 # -------------------------------------------------------------
 # Node 4: Targeted Clinical Hybrid Retrieval
 # -------------------------------------------------------------
@@ -415,6 +487,14 @@ def retrieve_node(state: AgentState) -> dict[str, Any]:
         top_k=5,
     )
 
+    # For drug interactions with multiple drugs, first query structured pairwise interaction catalog
+    all_query_drugs = canonical_drugs or extracted_drugs
+    pairwise_hits = []
+    if intent == "interaction" and len(all_query_drugs) >= 2:
+        pairwise_hits = lookup_pairwise_interactions(all_query_drugs)
+        if pairwise_hits:
+            logger.info("Found %d verified pairwise interaction(s) for %s", len(pairwise_hits), all_query_drugs)
+
     # For drug interactions with multiple drugs, retrieve interaction chunks for secondary drugs
     if intent == "interaction" and len(canonical_drugs) > 1:
         for other_d in canonical_drugs[1:3]:
@@ -428,6 +508,9 @@ def retrieve_node(state: AgentState) -> dict[str, Any]:
             for sc in sec_chunks:
                 if sc["id"] not in existing_ids:
                     chunks.append(sc)
+
+    if pairwise_hits:
+        chunks = pairwise_hits + chunks
 
     # If section-filtered search returned too few results, fall back to general section
     if len(chunks) < 2 and target_section is not None:
@@ -499,12 +582,15 @@ def retrieve_node(state: AgentState) -> dict[str, Any]:
             c_brands = [(b or "").upper() for b in (c.get("brand_names") or [])]
             c_content = (c.get("content") or "").upper()
             if (
-                any(t in c_gen for t in target_tokens)
+                c.get("category") == "pairwise_interaction"
+                or any(t in c_gen for t in target_tokens)
                 or any(any(t in b for t in target_tokens) for b in c_brands)
                 or any(re.search(rf"\b{re.escape(t)}\b", c_content) for t in target_tokens)
             ):
                 valid_chunks.append(c)
         chunks = valid_chunks
+    elif chunks and any(c.get("category") == "pairwise_interaction" for c in chunks):
+        pass
     else:
         # If no specific drug was detected in query, do not return random drug chunks
         chunks = []
@@ -513,9 +599,13 @@ def retrieve_node(state: AgentState) -> dict[str, Any]:
     for c in chunks:
         sources.append({
             "drug": c.get("generic_name"),
+            "formulation": c.get("formulation"),
             "section": c.get("section_title"),
             "severity": c.get("severity"),
             "source": c.get("source"),
+            "source_url": c.get("source_url"),
+            "revision_date": c.get("revision_date"),
+            "matched_passage": c.get("content"),
             "chunk_id": c.get("id"),
         })
 

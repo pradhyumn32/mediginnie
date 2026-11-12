@@ -3,6 +3,7 @@
 
 import json
 import logging
+import re
 from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -15,6 +16,14 @@ from graph.state import AgentState
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Clinical Chatbot"])
+
+
+def scrub_pii(text: str) -> str:
+    """Masks emails, phone numbers, and SSNs before server logging."""
+    text = re.sub(r"[\w\.-]+@[\w\.-]+\.\w+", "[EMAIL REDACTED]", text)
+    text = re.sub(r"(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", "[PHONE REDACTED]", text)
+    text = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[SSN REDACTED]", text)
+    return text
 
 
 def build_initial_state(request: ChatRequest) -> AgentState:
@@ -57,6 +66,12 @@ def chat_endpoint(request: ChatRequest):
     Executes clinical reasoning and grounded medical retrieval on the user's query.
     Returns structured clinical response with triage status and verified citations.
     """
+    logger.info(
+        "Chat audit: session=%s query_len=%d query='%s'",
+        request.session_id or "anon",
+        len(request.message),
+        scrub_pii(request.message)[:80],
+    )
     try:
         initial_state = build_initial_state(request)
         result = clinical_agent.invoke(initial_state)
@@ -64,9 +79,13 @@ def chat_endpoint(request: ChatRequest):
         sources = [
             SourceCitation(
                 drug=s.get("drug"),
+                formulation=s.get("formulation"),
                 section=s.get("section"),
                 severity=s.get("severity"),
                 source=s.get("source"),
+                source_url=s.get("source_url"),
+                revision_date=s.get("revision_date"),
+                matched_passage=s.get("matched_passage"),
                 chunk_id=str(s.get("chunk_id", "")),
             )
             for s in result.get("sources", [])
@@ -102,6 +121,12 @@ async def chat_stream_endpoint(request: ChatRequest):
     async def event_generator() -> AsyncGenerator[str, None]:
         initial_state = build_initial_state(request)
 
+        logger.info(
+            "Chat audit (stream): session=%s query_len=%d query='%s'",
+            request.session_id or "anon",
+            len(request.message),
+            scrub_pii(request.message)[:80],
+        )
         try:
             # Stream graph updates step by step
             for output in clinical_agent.stream(initial_state):

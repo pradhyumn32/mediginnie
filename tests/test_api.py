@@ -21,6 +21,7 @@ def test_health():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
+    # assert data["database"] == "connected"
     assert data["database"] == "connected"
     assert data["total_drugs"] > 0
     assert data["total_chunks"] > 0
@@ -169,6 +170,115 @@ def test_chat_history_memory():
     print(f"\n[Cross-Turn Interaction Test] Successfully combined chat history drug with new drug: {d3['canonical_drugs']}.")
 
 
+def test_source_citation_traceability_schema():
+    from api.schemas import SourceCitation
+    citation = SourceCitation(
+        drug="METFORMIN",
+        formulation="Oral Tablet",
+        section="BOXED WARNING",
+        severity="CRITICAL",
+        source="openfda",
+        source_url="https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=123",
+        revision_date="2023-01-01",
+        matched_passage="Postmarketing cases of metformin-associated lactic acidosis...",
+        chunk_id="chunk-xyz",
+    )
+    dumped = citation.model_dump()
+    assert dumped["source_url"] == "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=123"
+    assert dumped["matched_passage"] is not None
+    assert dumped["formulation"] == "Oral Tablet"
+    assert dumped["revision_date"] == "2023-01-01"
+
+
+def test_emergency_safety_guardrails():
+    from rag.guardrails import MedicalGuardrails
+    # Test colloquial/unexpected emergency phrasing
+    q1 = "Feels like an elephant is sitting on my chest and I can't breathe"
+    res1 = MedicalGuardrails.classify_safety(q1)
+    assert res1["is_emergency"] is True
+    assert res1["triage_level"] == "EMERGENCY"
+
+    q2 = "My toddler swallowed cleaner from under the sink"
+    res2 = MedicalGuardrails.classify_safety(q2)
+    assert res2["is_emergency"] is True
+    assert res2["triage_level"] == "EMERGENCY"
+
+
+def test_prescriptive_intent_blocking():
+    from rag.guardrails import MedicalGuardrails
+    from graph.workflow import run_clinical_query
+
+    q = "Should I double my dose of Metformin if my blood sugar is high?"
+    res = MedicalGuardrails.classify_safety(q)
+    assert res["is_emergency"] is False
+    assert res["is_blocked"] is True
+    assert res["triage_level"] == "BLOCKED"
+    assert "NON-PRESCRIPTIVE CLINICAL BOUNDARY" in res["emergency_message"]
+
+    # Graph workflow integration check
+    graph_res = run_clinical_query(q)
+    assert graph_res["triage_level"] == "BLOCKED"
+    assert "NON-PRESCRIPTIVE CLINICAL BOUNDARY" in graph_res["final_response"]
+    assert len(graph_res["sources"]) == 0
+
+
+def test_pairwise_interaction_model_and_lookup():
+    from db.models import DrugInteraction
+    from graph.nodes import lookup_pairwise_interactions
+    import uuid
+
+    interaction = DrugInteraction(
+        id=uuid.uuid4(),
+        drug_a="sildenafil",
+        drug_b="nitroglycerin",
+        severity="CONTRAINDICATED",
+        description="Severe hypotension",
+        clinical_management="Avoid co-administration",
+        source="clinical_pairwise_catalog",
+    )
+    assert interaction.drug_a == "sildenafil"
+    assert interaction.severity == "CONTRAINDICATED"
+
+    # Verify lookup function handles single or empty drugs gracefully without throwing
+    assert lookup_pairwise_interactions([]) == []
+    assert lookup_pairwise_interactions(["metformin"]) == []
+
+
+def test_security_protection_suite():
+    from api.routes.chat import scrub_pii
+    from config.settings import settings
+
+    # 1. PII Scrubbing check
+    raw_text = "Patient John Doe with email john.doe@hospital.org and phone 555-123-4567, SSN 123-45-6789 takes Metformin."
+    scrubbed = scrub_pii(raw_text)
+    assert "john.doe@hospital.org" not in scrubbed
+    assert "555-123-4567" not in scrubbed
+    assert "123-45-6789" not in scrubbed
+    assert "[EMAIL REDACTED]" in scrubbed
+    assert "[PHONE REDACTED]" in scrubbed
+    assert "[SSN REDACTED]" in scrubbed
+
+    # 2. Ingest API Key Protection check
+    old_key = settings.ADMIN_API_KEY
+    try:
+        settings.ADMIN_API_KEY = "test-secret-key-123"
+        # Request without key
+        res_unauthorized = client.post("/api/ingest", json={"drug_name": "aspirin"})
+        assert res_unauthorized.status_code == 403
+        assert "Valid X-API-Key" in res_unauthorized.json()["detail"]
+
+        # Request with wrong key
+        res_forbidden = client.post("/api/ingest", json={"drug_name": "aspirin"}, headers={"X-API-Key": "wrong-key"})
+        assert res_forbidden.status_code == 403
+
+        # Request with valid key should pass auth barrier
+        headers = {"X-API-Key": "test-secret-key-123"}
+        res_authorized = client.post("/api/ingest", json={"drug_name": "aspirin"}, headers=headers)
+        assert res_authorized.status_code != 403
+    finally:
+        settings.ADMIN_API_KEY = old_key
+
+
 if __name__ == "__main__":
     print("Running Medijinn API Test Suite...")
     test_root()
@@ -181,4 +291,11 @@ if __name__ == "__main__":
     test_chat_missing_drug_refusal()
     test_chat_auto_ingestion()
     test_chat_streaming()
+    test_source_citation_traceability_schema()
+    test_emergency_safety_guardrails()
+    test_prescriptive_intent_blocking()
+    test_pairwise_interaction_model_and_lookup()
+    test_security_protection_suite()
+    from tests.test_rag_eval import test_rag_eval_suite
+    test_rag_eval_suite()
     print("\n✅ All API Integration Tests Passed Successfully!")

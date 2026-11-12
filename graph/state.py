@@ -14,7 +14,7 @@ class AgentState(TypedDict):
     user_query: str
 
     # Safety & Triage
-    triage_level: Literal["NORMAL", "HIGH_RISK", "EMERGENCY"]
+    triage_level: Literal["NORMAL", "HIGH_RISK", "EMERGENCY", "BLOCKED"]
     is_emergency: bool
     emergency_message: str | None
 
@@ -22,7 +22,7 @@ class AgentState(TypedDict):
     extracted_drugs: list[str]
     canonical_drugs: list[str]
     extracted_symptoms: list[str]
-    intent: Literal["side_effects", "indications", "interaction", "contraindication", "dosage", "warnings", "general", "conversational", "greeting", "emergency"]
+    intent: Literal["side_effects", "indications", "interaction", "contraindication", "dosage", "warnings", "general", "conversational", "greeting", "emergency", "prescriptive_refusal"]
 
     # Retrieval & Provenance
     retrieved_chunks: list[dict[str, Any]]

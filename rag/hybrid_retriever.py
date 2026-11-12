@@ -12,7 +12,7 @@ from typing import Any, Optional
 import uuid
 from pydantic import Field
 from sqlalchemy import func, select, or_, Text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
@@ -50,10 +50,14 @@ class HybridRetriever(BaseRetriever):
         # similarity = 1 - cosine_distance
         cosine_dist = MedicalChunk.embedding.cosine_distance(query_vector)
 
-        stmt = select(
-            MedicalChunk,
-            cosine_dist.label("distance"),
-        ).where(MedicalChunk.embedding.is_not(None))
+        stmt = (
+            select(
+                MedicalChunk,
+                cosine_dist.label("distance"),
+            )
+            .options(joinedload(MedicalChunk.document))
+            .where(MedicalChunk.embedding.is_not(None))
+        )
 
         if drug_id:
             stmt = stmt.where(MedicalChunk.drug_id == drug_id)
@@ -90,9 +94,12 @@ class HybridRetriever(BaseRetriever):
         tokens = [t.strip() for t in query.split() if len(t.strip()) > 3]
         ilike_filters = [MedicalChunk.content.ilike(f"%{tok}%") for tok in tokens[:4]]
 
-        stmt = select(
-            MedicalChunk,
-            trgm_sim.label("sim_score"),
+        stmt = (
+            select(
+                MedicalChunk,
+                trgm_sim.label("sim_score"),
+            )
+            .options(joinedload(MedicalChunk.document))
         )
 
         conditions = []
@@ -237,6 +244,13 @@ class HybridRetriever(BaseRetriever):
             for cid in sorted_chunk_ids[:k]:
                 ch = chunk_map[cid]
                 meta = ch.metadata_ or {}
+                doc = ch.document
+                doc_url = doc.source_url if doc else None
+                set_id = meta.get("set_id") or (doc.source_id if doc else None)
+                if not doc_url and set_id:
+                    doc_url = f"https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid={set_id}"
+                rev_date = meta.get("effective_time") or (doc.created_at.strftime("%Y-%m-%d") if doc and doc.created_at else None)
+                formulation = meta.get("dosage_form") or meta.get("route")
                 final_results.append({
                     "id": str(ch.id),
                     "drug_id": str(ch.drug_id),
@@ -251,6 +265,9 @@ class HybridRetriever(BaseRetriever):
                     "dense_rank": dense_ranks.get(cid),
                     "sparse_rank": sparse_ranks.get(cid),
                     "source": ch.source,
+                    "source_url": doc_url,
+                    "revision_date": rev_date,
+                    "formulation": formulation,
                 })
 
             return final_results
@@ -289,6 +306,9 @@ class HybridRetriever(BaseRetriever):
                     "category": c["category"],
                     "rrf_score": c["rrf_score"],
                     "source": c["source"],
+                    "source_url": c.get("source_url"),
+                    "revision_date": c.get("revision_date"),
+                    "formulation": c.get("formulation"),
                 },
             )
             documents.append(doc)

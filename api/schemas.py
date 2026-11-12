@@ -17,15 +17,19 @@ class ChatRequest(BaseModel):
 
 class SourceCitation(BaseModel):
     drug: str | None = None
+    formulation: str | None = None
     section: str | None = None
     severity: str | None = None
     source: str | None = None
+    source_url: str | None = None
+    revision_date: str | None = None
+    matched_passage: str | None = None
     chunk_id: str | None = None
 
 
 class ChatResponse(BaseModel):
     response: str
-    triage_level: Literal["NORMAL", "HIGH_RISK", "EMERGENCY"]
+    triage_level: Literal["NORMAL", "HIGH_RISK", "EMERGENCY", "BLOCKED"]
     is_emergency: bool
     emergency_message: str | None = None
     extracted_drugs: list[str] = []

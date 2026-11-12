@@ -2,18 +2,53 @@
 
 import logging
 import os
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from config.settings import settings
 from db.db import engine, Base
 from rag.embeddings import get_embeddings_model
 from api.routes import health, chat, ingest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+
+class SimpleRateLimiterMiddleware(BaseHTTPMiddleware):
+    """In-memory sliding window rate limiter per client IP."""
+    def __init__(self, app, max_requests: int = 60, window_secs: int = 60):
+        super().__init__(app)
+        self.max_requests = max_requests
+        self.window_secs = window_secs
+        self.client_records: dict[str, list[float]] = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/static") or path in ("/", "/api/health"):
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "anonymous"
+        now = time.time()
+        timestamps = self.client_records[client_ip]
+
+        # Prune expired timestamps
+        self.client_records[client_ip] = [t for t in timestamps if now - t < self.window_secs]
+
+        if len(self.client_records[client_ip]) >= self.max_requests:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please slow down."},
+                headers={"Retry-After": str(self.window_secs)},
+            )
+
+        self.client_records[client_ip].append(now)
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -52,13 +87,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure Cross-Origin Resource Sharing (CORS)
+# Configure Cross-Origin Resource Sharing (CORS) with explicit origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Apply in-memory sliding window rate limiting
+app.add_middleware(
+    SimpleRateLimiterMiddleware,
+    max_requests=settings.RATE_LIMIT_PER_MINUTE,
+    window_secs=60,
 )
 
 # Register route modules under /api

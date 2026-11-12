@@ -213,3 +213,55 @@ class MedicalChunk(Base):
             "section",
         ),
     )
+
+
+class DrugInteraction(Base):
+    __tablename__ = "drug_interactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    drug_a: Mapped[str] = mapped_column(
+        String,
+        index=True,
+        nullable=False,
+    )
+
+    drug_b: Mapped[str] = mapped_column(
+        String,
+        index=True,
+        nullable=False,
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String,
+        index=True,
+        default="MAJOR",
+    )
+
+    description: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    clinical_management: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String,
+        default="clinical_pairwise_catalog",
+    )
+
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index("ix_drug_interactions_pair", "drug_a", "drug_b"),
+    )

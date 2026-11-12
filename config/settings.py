@@ -87,5 +87,19 @@ class Settings(BaseSettings):
         description="Max tokens generated per response"
     )
 
+    # Security & API Protection
+    ADMIN_API_KEY: str | None = Field(
+        default=None,
+        description="Optional API key required for /api/ingest mutation endpoints"
+    )
+    CORS_ORIGINS: list[str] = Field(
+        default=["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:3000"],
+        description="Explicit allowed CORS origins"
+    )
+    RATE_LIMIT_PER_MINUTE: int = Field(
+        default=60,
+        description="Max requests per minute per IP for API endpoints"
+    )
+
 
 settings = Settings()
